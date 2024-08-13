@@ -7,7 +7,10 @@ LOCATION_CODES = {
     "Any": "",
     "City of Cape Town, South Africa": "za-cpt",
     "Johannesburg, South Africa": "za-jhb",
-    "eThekwini, South Africa": "za-eth"
+    "eThekwini, South Africa": "za-eth",
+    "Eastern Cape": "ecc443",
+    "Western Cape Region 1": "wc011",
+    "Western Cape Region 33": "wc033"
 }
 
 # Function to extract the preamble from the XML document
