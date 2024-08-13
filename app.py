@@ -18,9 +18,9 @@ LOCATION_CODES = {
     "City of Cape Town, South Africa": "za-cpt",
     "Johannesburg, South Africa": "za-jhb",
     "eThekwini, South Africa": "za-eth",
-    "Eastern Cape": "ecc443",
-    "Western Cape Region 1": "wc011",
-    "Western Cape Region 33": "wc033"
+    "Eastern Cape": "za-ec443",
+    "Western Cape Region 1": "za-wc011",
+    "Western Cape Region 33": "za-wc033"
 }
 
 term_mapping = {
@@ -136,7 +136,7 @@ def handle_search(query, selected_location_code, selected_type):
         content_text = content.split("CONTENT:", 1)[-1].strip()
 
         # Convert location code back to full name
-        location = next(key for key, value in LOCATION_CODES.items() if value == location_code)
+        location = next((key for key, value in LOCATION_CODES.items() if value == location_code), location_code)
         
         title_formatted = title.replace("-", " ").title()
 
