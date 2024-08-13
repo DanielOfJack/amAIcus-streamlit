@@ -3,7 +3,6 @@ import streamlit as st
 from langchain_openai import OpenAIEmbeddings, OpenAI
 from langchain_pinecone import PineconeVectorStore
 from pinecone import Pinecone
-from display import display_full_law
 from sidebar import display_sidebar
 from openai import OpenAI
 import re
@@ -28,7 +27,6 @@ term_mapping = {
     "att": "Attachment",
     "part": "Part"
 }
-
 
 # Initialize OpenAI Embeddings and GPT-4o Mini
 embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
@@ -82,30 +80,41 @@ def modify_query_with_gpt(query):
     return response.choices[0].message.content.strip()
 
 def handle_search(query, selected_location_code, selected_type):
-    # Modify the query using GPT-4o Mini (HyDE approach)
-    modified_query = modify_query_with_gpt(query)
-    st.write(f"Search results for: **{query}** (modified to: **{modified_query}**)")
+    # Check if the search has already been performed
+    if query != st.session_state.get('last_query', ''):
+        # Modify the query using GPT-4o Mini (HyDE approach)
+        modified_query = modify_query_with_gpt(query)
+        st.write(f"Search results for: **{query}** (modified to: **{modified_query}**)")
 
-    # Construct metadata filter for Pinecone
-    filters = {}
-    if selected_location_code:
-        filters["Location"] = selected_location_code
-    if selected_type != "Any":
-        filters["Type"] = selected_type
-    
-    # Query Pinecone with the modified query
-    results = vector_store.similarity_search_with_score(
-        query=modified_query, 
-        k=5, 
-        filter=filters
-    )
-    
+        # Construct metadata filter for Pinecone
+        filters = {}
+        if selected_location_code:
+            filters["Location"] = selected_location_code
+        if selected_type != "Any":
+            filters["Type"] = selected_type
+        
+        # Query Pinecone with the modified query
+        results = vector_store.similarity_search_with_score(
+            query=modified_query, 
+            k=5, 
+            filter=filters
+        )
+
+        # Save the results and the query in session state
+        st.session_state['search_results'] = results
+        st.session_state['last_query'] = query
+
+    else:
+        # Use the results stored in session state
+        results = st.session_state['search_results']
+
     # Initialize session state to store the selected document and query
     if 'selected_doc' not in st.session_state:
         st.session_state['selected_doc'] = None
     if 'selected_query' not in st.session_state:
         st.session_state['selected_query'] = None
 
+    # Display the search results
     for i, (result, score) in enumerate(results, start=1):
         location_code = result.metadata.get("Location", "")
         title = result.metadata.get("Title", "")
@@ -128,8 +137,12 @@ def handle_search(query, selected_location_code, selected_type):
         
         title_formatted = title.replace("-", " ").title()
 
-        expression_title = f"_akn_{location_code}_act_{type_}_{date}_{title}_{result.metadata.get('Language', '')}@{updated}"
+        expression_title = f"akn_{location_code}_act_{type_}_{date}_{title}_{result.metadata.get('Language', '')}@{updated}"
         
+        # Construct the URL for the hyperlink
+        url_path = expression_title.replace('_', '/')
+        full_url = f"https://openbylaws.org.za/{url_path}"
+                
         with st.container():
             col1, col2, col3 = st.columns([1, 4, 1])
             
@@ -139,8 +152,8 @@ def handle_search(query, selected_location_code, selected_type):
             
             with col2:
                 st.markdown(f"**{location}**")
-                st.markdown(f"### <a href='/?expression_title={expression_title}'>{title_formatted}, {type_}, {date}</a>", unsafe_allow_html=True)
-                st.markdown(f"*{transform_component_id(doc_id)}*")
+                st.markdown(f"### <a href='{full_url}' target='_blank'>{title_formatted}, {type_}, {date}</a>", unsafe_allow_html=True)
+                st.markdown(f"<a href='{full_url}#{doc_id}' target='_blank'>{transform_component_id(doc_id)}</a>", unsafe_allow_html=True)
                 st.markdown(f"{headings_text}")
                 st.markdown(f"{content_text}")
             
@@ -185,7 +198,4 @@ def main_search_page():
     if query:
         handle_search(query, selected_location_code, selected_type)
 
-if "expression_title" in st.query_params:
-    display_full_law(st.query_params["expression_title"])
-else:
-    main_search_page()
+main_search_page()

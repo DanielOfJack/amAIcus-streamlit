@@ -153,22 +153,23 @@ def display_sidebar(result, query):
         with open(file_path, 'r') as file:
             xml_content = file.read()
 
-        # Extract the preamble and section context using the component_id
-        preamble = extract_preamble(xml_content)
-        section_context = extract_section_context(xml_content, component_id)
+        with st.spinner('Generating summaries...'):
+            # Extract the preamble and section context using the component_id
+            preamble = extract_preamble(xml_content)
+            section_context = extract_section_context(xml_content, component_id)
 
-        if preamble:
-            # Generate a summary of the document using the preamble
-            document_summary = generate_document_summary(query, title_formatted, location_code, date, preamble)
-            st.sidebar.markdown("### Summary of Document")
-            st.sidebar.markdown(document_summary)
+            if preamble:
+                # Generate a summary of the document using the preamble
+                document_summary = generate_document_summary(query, title_formatted, location_code, date, preamble)
+                st.sidebar.markdown("### Summary of Document")
+                st.sidebar.markdown(document_summary)
 
-        if section_context:
-            # Generate a summary of the section using the section context and component ID
-            section_summary = generate_section_summary(query, title_formatted, location_code, date, section_context, component_id)
-            st.sidebar.markdown("### Summary of Section")
-            st.sidebar.markdown(section_summary)
-        else:
-            st.sidebar.error("Unable to find the relevant section or context in the document.")
+            if section_context:
+                # Generate a summary of the section using the section context and component ID
+                section_summary = generate_section_summary(query, title_formatted, location_code, date, section_context, component_id)
+                st.sidebar.markdown("### Summary of Section")
+                st.sidebar.markdown(section_summary)
+            else:
+                st.sidebar.error("Unable to find the relevant section or context in the document.")
     else:
         st.sidebar.error("The requested document does not exist.")
