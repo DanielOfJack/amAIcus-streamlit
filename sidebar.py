@@ -3,6 +3,29 @@ import streamlit as st
 from lxml import etree
 from openai import OpenAI
 
+LOCATION_CODES = {
+    "Any": "",
+    "City of Cape Town, South Africa": "za-cpt",
+    "Johannesburg, South Africa": "za-jhb",
+    "eThekwini, South Africa": "za-eth"
+}
+
+# Function to extract the preamble from the XML document
+def extract_text_ignore_remarks(element, nsmap):
+    # Extracts text from the element, ignoring any text within <a:remark> elements
+    return ' '.join(element.xpath(".//text()[not(ancestor::a:remark)]", namespaces=nsmap))
+
+def extract_preamble(xml_content):
+    root = etree.fromstring(xml_content)
+    
+    nsmap = root.nsmap
+    preamble = root.find(".//preamble", namespaces=nsmap)
+    
+    if preamble is not None:
+        return ''.join(preamble.itertext()).strip()
+    
+    return None
+
 # Function to extract the section context from the XML document
 def extract_section_context(xml_content, component_id):
     # Parse the XML content
@@ -34,24 +57,59 @@ def extract_section_context(xml_content, component_id):
         
         return context.strip()
 
-# Function to generate a summary using OpenAI
-def generate_summary(query, search_content, section_context):
+# Function to generate a summary of the document using OpenAI
+def generate_document_summary(query, title, location, date, preamble):
     client = OpenAI()
 
     prompt = f"""
-    You are a legal assistant, helping a client to understand whether or not a legal document is relevant for what they are searching for. The client has asked:
+    You are a legal assistant, helping a client to understand whether or not a legal document is relevant for what they are searching for. The client is looking for the following:
 
     {query}
 
-    The following is the search result found:
+    The following document is being reviewed for its relevance to the search query:
 
-    {search_content}
+    {title}, {location}, {date}
 
-    The following is the text-content of the full section of the legal document in which that response was found:
+    Provide the user with a concise summary of what the document pertains to based on the preamble:
+
+    {preamble}
+    """
+
+    # Create a chat completion with streaming
+    stream = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[{"role": "user", "content": prompt}],
+        stream=True,
+    )
+
+    # Collect the streamed response
+    summary = ""
+    for chunk in stream:
+        if chunk.choices[0].delta.content is not None:
+            summary += chunk.choices[0].delta.content
+
+    return summary.strip()
+
+# Function to generate a summary of the section using OpenAI
+def generate_section_summary(query, title, location, date, section_context, component_id):
+    client = OpenAI()
+
+    prompt = f"""
+    You are a legal assistant, helping a client to understand whether or not a legal document is relevant for what they are searching for. The client is looking for the following:
+
+    {query}
+
+    The following document is being reviewed for its relevance to the search query:
+
+    {title}, {location}, {date}
+
+    Component ID: {component_id}
+
+    The component ID regards the specific component matched in the search query. Here is the greater context of the document found to be relevant during the search. This context is two levels up from the end of the component ID, whatever section/part/attachment etc. that may be:
 
     {section_context}
 
-    Please provide the client with a summary of the content of this section of the legal document, focusing strongly on any information that might be relevant. The goal is to help the client understand if this section of this document actually contains the information they want.
+    Provide the user with an overview of the content within the section, with a focus on content related to the search query. The goal here is NOT to answer the user's query, but to explain what information the user can expect to find within this section of the document. Do not include a conclusion.
     """
 
     # Create a chat completion with streaming
@@ -70,21 +128,21 @@ def generate_summary(query, search_content, section_context):
     return summary.strip()
 
 # Function to display the sidebar content
-def display_sidebar(result, query):
-    st.sidebar.header("Additional Information")
-    
+def display_sidebar(result, query):    
     # Display the same information as col2 of the card
     location_code = result.metadata.get("Location", "")
     title = result.metadata.get("Title", "")
     type_ = result.metadata.get("Type", "")
     date = result.metadata.get("Date", "")
-    doc_id = result.metadata.get("ID", "")
+    component_id = result.metadata.get("ID", "")  # This is the component ID
     
     title_formatted = title.replace("-", " ").title()
+    
+    st.sidebar.header(f"{title_formatted}, {type_}, {date}")
 
-    st.sidebar.markdown(f"**{location_code}**")
-    st.sidebar.markdown(f"### {title_formatted}, {type_}, {date}")
-    st.sidebar.markdown(f"*{doc_id}*")
+    location = next(key for key, value in LOCATION_CODES.items() if value == location_code)
+
+    st.sidebar.markdown(f"**{location}**")
 
     # Load the XML file for the selected document
     expression_title = f"_akn_{location_code}_act_{type_}_{date}_{title}_{result.metadata.get('Language', '')}@{result.metadata.get('Updated', '')}"
@@ -95,16 +153,21 @@ def display_sidebar(result, query):
         with open(file_path, 'r') as file:
             xml_content = file.read()
 
-        # Extract the section context using the doc_id
-        section_context = extract_section_context(xml_content, doc_id)
+        # Extract the preamble and section context using the component_id
+        preamble = extract_preamble(xml_content)
+        section_context = extract_section_context(xml_content, component_id)
+
+        if preamble:
+            # Generate a summary of the document using the preamble
+            document_summary = generate_document_summary(query, title_formatted, location_code, date, preamble)
+            st.sidebar.markdown("### Summary of Document")
+            st.sidebar.markdown(document_summary)
 
         if section_context:
-            # Generate a summary using the query, search content, and section context
-            summary = generate_summary(query, result.page_content.strip(), section_context)
-            
-            # Display the summary in the sidebar
+            # Generate a summary of the section using the section context and component ID
+            section_summary = generate_section_summary(query, title_formatted, location_code, date, section_context, component_id)
             st.sidebar.markdown("### Summary of Section")
-            st.sidebar.markdown(summary)
+            st.sidebar.markdown(section_summary)
         else:
             st.sidebar.error("Unable to find the relevant section or context in the document.")
     else:
